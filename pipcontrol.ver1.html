@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML5 RWD Picture-in-Picture 智能媒體控制中心</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 圖標 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        video::-webkit-media-controls-picture-in-picture-button {
+            display: none;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col">
+
+    <!-- 全局提示框 (替代 Alert) -->
+    <div id="custom-alert" class="fixed top-5 right-5 z-50 transform translate-x-full transition-transform duration-300 ease-in-out">
+        <div class="bg-slate-900 border-l-4 border-emerald-500 text-slate-100 p-4 rounded-r shadow-2xl flex items-center space-x-3 max-w-sm">
+            <i class="fa-solid fa-circle-info text-emerald-500 text-xl"></i>
+            <div>
+                <p id="alert-title" class="font-bold text-sm text-slate-200">提示</p>
+                <p id="alert-message" class="text-xs text-slate-400">操作成功</p>
+            </div>
+            <button onclick="closeAlert()" class="text-slate-400 hover:text-white pl-4">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 首次點擊引導遮罩 -->
+    <div id="welcome-overlay" class="fixed inset-0 bg-slate-950/95 z-40 flex flex-col items-center justify-center p-6 text-center transition-opacity duration-500">
+        <div class="max-w-md bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
+            <div class="w-16 h-16 bg-indigo-600/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i class="fa-solid fa-play text-indigo-500 text-2xl"></i>
+            </div>
+            <h1 class="text-2xl font-bold mb-3 text-white">進入 PiP 媒體中心</h1>
+            <p class="text-slate-400 text-sm mb-6 leading-relaxed">
+                瀏覽器限制未經用戶互動的畫中畫啟用。請點擊下方按鈕，系統將自動啟動影片並同步開啟置頂畫中畫視窗。
+            </p>
+            <div class="space-y-3">
+                <button id="btn-auto-start" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium py-3 px-6 rounded-xl transition duration-200 shadow-lg shadow-indigo-600/30 flex items-center justify-center space-x-2">
+                    <span>授權並開啟 (優先加載網絡影片)</span>
+                </button>
+                <button id="btn-auto-start-local" class="w-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-medium py-3 px-6 rounded-xl transition duration-200 shadow-lg shadow-emerald-600/30 flex items-center justify-center space-x-2">
+                    <span>極速啟動 (使用本地解碼串流，防出錯)</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 導航欄 -->
+    <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                    <i class="fa-solid fa-images text-white text-sm"></i>
+                </div>
+                <span class="font-bold text-lg tracking-wider bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">PIP CONTROL</span>
+            </div>
+            <div class="flex items-center space-x-2">
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <span class="w-1.5 h-1.5 mr-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    RWD 響應式
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主體內容 -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <!-- 左側：影片播放器及核心操作區 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 影片容器 -->
+                <div class="relative bg-slate-900 rounded-2xl overflow-hidden border border-slate-800 shadow-xl group aspect-video">
+                    
+                    <!-- 隱藏的 Canvas 用作本地備用串流生成 -->
+                    <canvas id="fallback-canvas" class="hidden" width="640" height="360"></canvas>
+
+                    <!-- 影片元件 -->
+                    <video id="main-video" class="w-full h-full object-cover" loop playsinline muted>
+                        <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" type="video/mp4">
+                        您的瀏覽器不支援 HTML5 影片。
+                    </video>
+
+                    <!-- 加載中/狀態顯示遮罩 -->
+                    <div id="video-loading-overlay" class="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center transition-opacity duration-300 pointer-events-none">
+                        <div class="text-center p-4">
+                            <i class="fa-solid fa-circle-notch text-indigo-500 text-3xl animate-spin mb-3"></i>
+                            <p class="text-sm text-slate-300" id="txt-loading-step">正在初始化影片資源...</p>
+                        </div>
+                    </div>
+
+                    <!-- 畫中畫啟動中提示 -->
+                    <div id="pip-active-overlay" class="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300">
+                        <div class="text-center p-4">
+                            <div class="w-12 h-12 bg-indigo-600/30 rounded-full flex items-center justify-center mx-auto mb-3 animate-bounce">
+                                <i class="fa-solid fa-window-restore text-indigo-400 text-lg"></i>
+                            </div>
+                            <p class="text-sm font-medium text-slate-200">影片正在畫中畫模式播放</p>
+                            <p class="text-xs text-slate-500 mt-1">本視窗可縮小，影片將在桌面頂層持續播放</p>
+                        </div>
+                    </div>
+
+                    <!-- 控制條 -->
+                    <div class="absolute bottom-0 inset-x-0 bg-gradient-to-t from-slate-950 via-slate-950/60 to-transparent p-4 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-between">
+                        <div class="flex items-center space-x-3">
+                            <button id="btn-video-play" class="text-slate-300 hover:text-white focus:outline-none">
+                                <i class="fa-solid fa-play" id="play-icon"></i>
+                            </button>
+                            <span class="text-xs text-slate-300" id="video-time">00:00 / 00:00</span>
+                        </div>
+                        <div class="flex items-center space-x-3">
+                            <button id="btn-video-mute" class="text-slate-300 hover:text-white focus:outline-none">
+                                <i class="fa-solid fa-volume-mute" id="mute-icon"></i>
+                            </button>
+                            <button id="btn-video-pip" class="text-slate-300 hover:text-indigo-400 focus:outline-none transition-colors">
+                                <i class="fa-solid fa-window-restore"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 控制面板 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-md">
+                    <h2 class="text-lg font-bold mb-4 flex items-center space-x-2 text-white">
+                        <i class="fa-solid fa-sliders text-indigo-500"></i>
+                        <span>手動控制台</span>
+                    </h2>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <button id="btn-manual-toggle" class="flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-medium py-3 px-4 rounded-xl transition duration-150">
+                            <i class="fa-solid fa-window-maximize"></i>
+                            <span id="txt-pip-state">開啟畫中畫</span>
+                        </button>
+                        
+                        <button id="btn-use-local" class="flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-medium py-3 px-4 rounded-xl transition duration-150">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i>
+                            <span>切換本地解碼串流</span>
+                        </button>
+
+                        <button id="btn-change-source" class="flex items-center justify-center space-x-2 bg-slate-850 hover:bg-slate-750 active:scale-95 text-slate-200 font-medium py-3 px-4 rounded-xl transition duration-150 border border-slate-700">
+                            <i class="fa-solid fa-video"></i>
+                            <span>切換網絡影片</span>
+                        </button>
+                    </div>
+
+                    <div class="mt-4 p-4 bg-slate-950 rounded-xl border border-slate-850">
+                        <div class="flex items-start space-x-3">
+                            <input type="checkbox" id="chk-auto-visibility" class="mt-1 rounded bg-slate-800 border-slate-700 text-indigo-600 focus:ring-indigo-500 h-4 w-4">
+                            <label for="chk-auto-visibility" class="text-xs text-slate-400 leading-relaxed cursor-pointer select-none">
+                                <strong class="text-slate-200 block mb-0.5">智能切換分頁自動畫中畫 (系統推薦)</strong>
+                                勾選後，當您切換至其他分頁或最小化此網頁，影片會自動轉為置頂畫中畫。
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右側：狀態監控與資訊 -->
+            <div class="space-y-6">
+                <!-- 實時狀態面板 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-md">
+                    <h2 class="text-lg font-bold mb-4 flex items-center space-x-2 text-white">
+                        <i class="fa-solid fa-gauge-high text-indigo-500"></i>
+                        <span>實時狀態監控</span>
+                    </h2>
+                    
+                    <div class="space-y-3">
+                        <div class="flex justify-between items-center py-2 border-b border-slate-800">
+                            <span class="text-xs text-slate-400">目前影片加載狀態 (ReadyState)</span>
+                            <span id="status-ready-state" class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-950 text-amber-400 border border-slate-800">0 - HAVE_NOTHING</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2 border-b border-slate-800">
+                            <span class="text-xs text-slate-400">當前影片來源種類</span>
+                            <span id="status-source-type" class="text-xs font-semibold px-2 py-0.5 rounded bg-slate-950 text-indigo-400 border border-slate-800">網絡影片 (MP4)</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2 border-b border-slate-800">
+                            <span class="text-xs text-slate-400">標準 Video PiP API 支持</span>
+                            <span id="status-video-pip" class="text-xs font-semibold px-2 py-0.5 rounded">檢測中...</span>
+                        </div>
+                        <div class="flex justify-between items-center py-2">
+                            <span class="text-xs text-slate-400">當前 PiP 運作狀態</span>
+                            <span id="status-current-state" class="text-xs font-semibold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">關閉</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 解決方案與原理 -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-md">
+                    <h2 class="text-lg font-bold mb-3 flex items-center space-x-2 text-white">
+                        <i class="fa-solid fa-circle-question text-emerald-500"></i>
+                        <span>為什麼發生錯誤？</span>
+                    </h2>
+                    <ul class="space-y-3 text-xs text-slate-400 leading-relaxed list-disc list-inside">
+                        <li>
+                            <strong class="text-slate-300">防非同步搶跑：</strong>
+                            當影片資源未完成初始化（即 `readyState < 1`），強行啟用畫中畫會被瀏覽器安全沙盒阻斷。
+                        </li>
+                        <li>
+                            <strong class="text-slate-300">本地 Canvas 串流技術：</strong>
+                            我們新增了本地 Canvas 生成技術。當網絡不穩定或存在跨域 CORS 阻擋時，按「切換本地解碼串流」會立刻將 Canvas 動畫轉化為本地 Video Stream，繞過所有外聯網絡檢測。
+                        </li>
+                    </ul>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="bg-slate-950 border-t border-slate-900 py-6 text-center text-xs text-slate-600 mt-auto">
+        <p>© 2026 Picture-in-Picture Control System. 採用原生 HTML5 & Tailwind CSS 開發.</p>
+    </footer>
+
+    <!-- JavaScript 邏輯控制 -->
+    <script>
+        const video = document.getElementById('main-video');
+        const welcomeOverlay = document.getElementById('welcome-overlay');
+        const btnAutoStart = document.getElementById('btn-auto-start');
+        const btnAutoStartLocal = document.getElementById('btn-auto-start-local');
+        const btnManualToggle = document.getElementById('btn-manual-toggle');
+        const txtPipState = document.getElementById('txt-pip-state');
+        const btnChangeSource = document.getElementById('btn-change-source');
+        const btnUseLocal = document.getElementById('btn-use-local');
+        const chkAutoVisibility = document.getElementById('chk-auto-visibility');
+        const pipActiveOverlay = document.getElementById('pip-active-overlay');
+        const videoLoadingOverlay = document.getElementById('video-loading-overlay');
+        const txtLoadingStep = document.getElementById('txt-loading-step');
+        
+        // Canvas 串流控制
+        const canvas = document.getElementById('fallback-canvas');
+        const ctx = canvas.getContext('2d');
+        let canvasAnimationId = null;
+        let isUsingLocalStream = false;
+
+        // 自訂控制元件
+        const btnVideoPlay = document.getElementById('btn-video-play');
+        const btnVideoMute = document.getElementById('btn-video-mute');
+        const btnVideoPip = document.getElementById('btn-video-pip');
+        const playIcon = document.getElementById('play-icon');
+        const muteIcon = document.getElementById('mute-icon');
+        const videoTime = document.getElementById('video-time');
+
+        // 兼容性顯示元件
+        const statusVideoPip = document.getElementById('status-video-pip');
+        const statusReadyState = document.getElementById('status-ready-state');
+        const statusSourceType = document.getElementById('status-source-type');
+        const statusCurrentState = document.getElementById('status-current-state');
+
+        // 測試影片庫
+        const videoSources = [
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+            "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+        ];
+        let currentSourceIndex = 0;
+
+        // 初始化檢查兼容性
+        function checkCompatibility() {
+            if (document.pictureInPictureEnabled) {
+                statusVideoPip.textContent = "支援";
+                statusVideoPip.className = "text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20";
+            } else {
+                statusVideoPip.textContent = "不支援";
+                statusVideoPip.className = "text-xs font-semibold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20";
+            }
+            updateReadyStateDisplay();
+        }
+
+        // 更新 ReadyState 指示器
+        function updateReadyStateDisplay() {
+            const states = [
+                "0 - HAVE_NOTHING (未加載元數據)",
+                "1 - HAVE_METADATA (元數據已就緒)",
+                "2 - HAVE_CURRENT_DATA (當前幀已就緒)",
+                "3 - HAVE_FUTURE_DATA (多幀已就緒)",
+                "4 - HAVE_ENOUGH_DATA (緩存足夠)"
+            ];
+            const state = video.readyState;
+            statusReadyState.textContent = states[state] || `${state} - 未知狀態`;
+            
+            if (state >= 1) {
+                statusReadyState.className = "text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20";
+                videoLoadingOverlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    videoLoadingOverlay.classList.add('hidden');
+                }, 300);
+            } else {
+                statusReadyState.className = "text-xs font-semibold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20";
+                videoLoadingOverlay.classList.remove('hidden');
+                videoLoadingOverlay.classList.remove('opacity-0');
+            }
+        }
+
+        // 自定義提示框 (替代 Alert)
+        function showAlert(title, message) {
+            const alertBox = document.getElementById('custom-alert');
+            document.getElementById('alert-title').textContent = title;
+            document.getElementById('alert-message').textContent = message;
+            alertBox.classList.remove('translate-x-full');
+            
+            setTimeout(() => {
+                closeAlert();
+            }, 5000);
+        }
+
+        function closeAlert() {
+            const alertBox = document.getElementById('custom-alert');
+            alertBox.classList.add('translate-x-full');
+        }
+
+        // 啟動 Canvas 本地渲染串流 (防網絡出錯方案)
+        function startLocalCanvasStream() {
+            isUsingLocalStream = true;
+            statusSourceType.textContent = "本地解碼 (Canvas 串流)";
+            txtLoadingStep.textContent = "正在生成本地無延遲渲染串流...";
+            
+            if (canvasAnimationId) {
+                cancelAnimationFrame(canvasAnimationId);
+            }
+
+            // 繪製動態圖形確保 PiP 視窗有連續畫面
+            let angle = 0;
+            function draw() {
+                ctx.fillStyle = '#0f172a'; // Slate 900
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // 畫一些動態幾何圖形
+                ctx.save();
+                ctx.translate(canvas.width / 2, canvas.height / 2);
+                ctx.rotate(angle);
+                
+                // 漸變圓環
+                const gradient = ctx.createRadialGradient(0, 0, 10, 0, 0, 120);
+                gradient.addColorStop(0, '#6366f1'); // Indigo 500
+                gradient.addColorStop(1, '#10b981'); // Emerald 500
+                ctx.strokeStyle = gradient;
+                ctx.lineWidth = 15;
+                ctx.beginPath();
+                ctx.arc(0, 0, 80, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // 旋轉方塊
+                ctx.fillStyle = '#ffffff';
+                ctx.fillRect(-20, -20, 40, 40);
+                ctx.restore();
+
+                // 繪製狀態文字
+                ctx.fillStyle = '#94a3b8';
+                ctx.font = '20px sans-serif';
+                ctx.fillText("本地防出錯畫中畫測試源", 40, 50);
+                ctx.font = '16px sans-serif';
+                ctx.fillText(`幀率：30 FPS | 時間: ${(Date.now() / 1000).toFixed(1)}s`, 40, 80);
+
+                angle += 0.03;
+                canvasAnimationId = requestAnimationFrame(draw);
+            }
+            draw();
+
+            // 從 Canvas 擷取 30fps 串流
+            const stream = canvas.captureStream(30);
+            
+            // 清空舊網絡源，掛載本地串流物件
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            video.srcObject = stream;
+            
+            video.play().then(() => {
+                updateReadyStateDisplay();
+            }).catch(e => {
+                console.error("本地串流播放失敗:", e);
+            });
+        }
+
+        // 切換回網絡影片源
+        function useNetworkVideoSource(url) {
+            isUsingLocalStream = false;
+            statusSourceType.textContent = "網絡影片 (MP4)";
+            txtLoadingStep.textContent = "正在下載網絡影片元數據...";
+
+            if (canvasAnimationId) {
+                cancelAnimationFrame(canvasAnimationId);
+                canvasAnimationId = null;
+            }
+
+            video.srcObject = null;
+            video.src = url;
+            video.load();
+            
+            video.play().then(() => {
+                updateReadyStateDisplay();
+            }).catch(err => {
+                console.warn("網絡影片啟動受阻，改用本地串流:", err);
+                startLocalCanvasStream();
+            });
+        }
+
+        // 安全啟動畫中畫核心函數 (加入 readyState 預檢)
+        async function enterPictureInPicture() {
+            try {
+                if (!document.pictureInPictureEnabled) {
+                    throw new Error("此瀏覽器環境不支持 HTML5 Picture-in-Picture 功能。");
+                }
+
+                // 安全防禦：如果影片完全未加載好
+                if (video.readyState < 1) {
+                    showAlert("請稍候", "影片元數據正在初始化，系統將在加載完成後自動為您啟動置頂窗口。");
+                    
+                    // 註冊一次性監聽事件，就緒後自動啟動
+                    const autoStartOnLoad = async () => {
+                        updateReadyStateDisplay();
+                        if (video.readyState >= 1) {
+                            video.removeEventListener('loadedmetadata', autoStartOnLoad);
+                            await enterPictureInPicture();
+                        }
+                    };
+                    video.addEventListener('loadedmetadata', autoStartOnLoad);
+                    return;
+                }
+                
+                if (video.paused) {
+                    await video.play();
+                }
+
+                await video.requestPictureInPicture();
+                showAlert("畫中畫已成功啟用", "影片已在最上層視窗播放。");
+            } catch (error) {
+                console.error(error);
+                showAlert("啟用失敗", error.message || "未能成功調用 Picture-in-Picture 接口。");
+            }
+        }
+
+        // 關閉畫中畫
+        async function exitPictureInPicture() {
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                }
+            } catch (error) {
+                console.error(error);
+            }
+        }
+
+        // 雙態切換
+        async function togglePictureInPicture() {
+            if (document.pictureInPictureElement) {
+                await exitPictureInPicture();
+            } else {
+                await enterPictureInPicture();
+            }
+        }
+
+        // 首次點擊並自動開啟 PIP (網絡源優先)
+        btnAutoStart.addEventListener('click', async () => {
+            welcomeOverlay.classList.add('opacity-0');
+            setTimeout(() => {
+                welcomeOverlay.classList.add('hidden');
+            }, 500);
+
+            video.muted = false;
+            // 優先嘗試網絡播放
+            useNetworkVideoSource(videoSources[currentSourceIndex]);
+            // 嘗試開啟 PiP
+            setTimeout(async () => {
+                await enterPictureInPicture();
+            }, 300);
+        });
+
+        // 首次點擊並自動開啟 PIP (本地備用源防出錯)
+        btnAutoStartLocal.addEventListener('click', async () => {
+            welcomeOverlay.classList.add('opacity-0');
+            setTimeout(() => {
+                welcomeOverlay.classList.add('hidden');
+            }, 500);
+
+            video.muted = false;
+            startLocalCanvasStream();
+            setTimeout(async () => {
+                await enterPictureInPicture();
+            }, 200);
+        });
+
+        // 手動控制按鈕
+        btnManualToggle.addEventListener('click', togglePictureInPicture);
+
+        // 切換網絡影片源
+        btnChangeSource.addEventListener('click', () => {
+            currentSourceIndex = (currentSourceIndex + 1) % videoSources.length;
+            useNetworkVideoSource(videoSources[currentSourceIndex]);
+            setTimeout(async () => {
+                if (document.pictureInPictureElement) {
+                    await enterPictureInPicture();
+                }
+            }, 500);
+        });
+
+        // 強制切換為本地 Canvas 串流
+        btnUseLocal.addEventListener('click', () => {
+            startLocalCanvasStream();
+            showAlert("已啟用本地測試串流", "此模式具有零延遲、防網絡干擾優勢。");
+            setTimeout(async () => {
+                if (document.pictureInPictureElement) {
+                    await enterPictureInPicture();
+                }
+            }, 200);
+        });
+
+        // 狀態事件監聽
+        video.addEventListener('loadedmetadata', updateReadyStateDisplay);
+        video.addEventListener('canplay', updateReadyStateDisplay);
+        video.addEventListener('progress', updateReadyStateDisplay);
+
+        video.addEventListener('enterpictureinpicture', (event) => {
+            txtPipState.textContent = "關閉畫中畫";
+            statusCurrentState.textContent = "啟用中";
+            statusCurrentState.className = "text-xs font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20";
+            pipActiveOverlay.classList.remove('opacity-0');
+            pipActiveOverlay.classList.add('opacity-100');
+        });
+
+        video.addEventListener('leavepictureinpicture', (event) => {
+            txtPipState.textContent = "開啟畫中畫";
+            statusCurrentState.textContent = "關閉";
+            statusCurrentState.className = "text-xs font-semibold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20";
+            pipActiveOverlay.classList.remove('opacity-100');
+            pipActiveOverlay.classList.add('opacity-0');
+        });
+
+        // 斷網/跨域加載出錯自動降級本地
+        video.addEventListener('error', (e) => {
+            console.warn("影片加載發生錯誤，啟用防呆機制切換至本地 Canvas 串流:", e);
+            if (!isUsingLocalStream) {
+                startLocalCanvasStream();
+            }
+        });
+
+        // 智能自動切換
+        document.addEventListener('visibilitychange', async () => {
+            if (chkAutoVisibility.checked) {
+                if (document.visibilityState === 'hidden') {
+                    if (!document.pictureInPictureElement && !video.paused) {
+                        try {
+                            await video.requestPictureInPicture();
+                        } catch (e) {
+                            console.warn("無法在背景切換中啟動畫中畫:", e);
+                        }
+                    }
+                } else {
+                    if (document.pictureInPictureElement) {
+                        await exitPictureInPicture();
+                    }
+                }
+            }
+        });
+
+        // 傳統控制列按鈕邏輯
+        btnVideoPlay.addEventListener('click', () => {
+            if (video.paused) {
+                video.play();
+            } else {
+                video.pause();
+            }
+        });
+
+        video.addEventListener('play', () => {
+            playIcon.className = "fa-solid fa-pause";
+        });
+
+        video.addEventListener('pause', () => {
+            playIcon.className = "fa-solid fa-play";
+        });
+
+        btnVideoMute.addEventListener('click', () => {
+            video.muted = !video.muted;
+            updateMuteIcon();
+        });
+
+        function updateMuteIcon() {
+            if (video.muted) {
+                muteIcon.className = "fa-solid fa-volume-mute";
+            } else {
+                muteIcon.className = "fa-solid fa-volume-high";
+            }
+        }
+
+        btnVideoPip.addEventListener('click', togglePictureInPicture);
+
+        // 更新時間軌
+        video.addEventListener('timeupdate', () => {
+            const formatTime = (time) => {
+                const minutes = Math.floor(time / 60);
+                const seconds = Math.floor(time % 60).toString().padStart(2, '0');
+                return `${minutes}:${seconds}`;
+            };
+            videoTime.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration || 0)}`;
+        });
+
+        // 初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            checkCompatibility();
+            updateMuteIcon();
+            
+            // 嘗試載入影片
+            video.load();
+        });
+    </script>
+</body>
+</html>
