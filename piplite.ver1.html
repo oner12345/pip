@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>子母畫面測試</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-100 flex items-center justify-center min-h-screen">
+
+    <div id="app-container" class="bg-white p-8 rounded-2xl shadow-xl w-80 text-center">
+        <h1 class="text-xl font-bold mb-4">PIP 測試儀</h1>
+        <p id="status" class="text-sm text-gray-500 mb-6">點擊下方按鈕進行測試</p>
+        
+        <button id="pip-btn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 w-full font-bold">
+            開啟子母畫面
+        </button>
+    </div>
+
+    <script>
+        const btn = document.getElementById('pip-btn');
+        const status = document.getElementById('status');
+
+        btn.addEventListener('click', async () => {
+            // 1. 檢查是否支援 API
+            if (!('documentPictureInPicture' in window)) {
+                status.innerText = "失敗：您的瀏覽器不支援 Document PiP API (請使用 Chrome)";
+                status.classList.replace('text-gray-500', 'text-red-500');
+                return;
+            }
+
+            try {
+                // 2. 請求子視窗
+                const pipWindow = await window.documentPictureInPicture.requestWindow({
+                    width: 300,
+                    height: 400,
+                });
+
+                // 3. 移動內容
+                const app = document.getElementById('app-container');
+                pipWindow.document.body.append(app);
+                
+                // 加入樣式 (如果遺失)
+                const style = document.createElement('style');
+                style.textContent = `body { display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f1f5f9; }`;
+                pipWindow.document.head.append(style);
+
+                status.innerText = "PIP 已開啟！";
+
+                // 4. 監聽關閉
+                pipWindow.addEventListener("pagehide", () => {
+                    document.body.append(app);
+                    status.innerText = "已返回主視窗";
+                });
+            } catch (err) {
+                console.error(err);
+                status.innerText = "錯誤: " + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
