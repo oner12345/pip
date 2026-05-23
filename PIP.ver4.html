@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PIP 畫中畫多功能工具箱 (全平台完美相容版)</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .pulse-btn {
+            animation: pulse-soft 3s infinite;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-full flex flex-col justify-between overflow-x-hidden">
+
+    <!-- 自動開啟 PIP 覆蓋引導層 -->
+    <div id="welcome-overlay" class="fixed inset-0 z-50 bg-slate-950/95 flex flex-col items-center justify-center p-6 text-center transition-all duration-500">
+        <div class="max-w-md p-8 rounded-2xl bg-slate-900 border border-indigo-500/30 shadow-2xl shadow-indigo-500/10 flex flex-col items-center">
+            <div class="w-16 h-16 bg-indigo-600/10 rounded-full flex items-center justify-center mb-6 border border-indigo-500/20 text-indigo-400">
+                <i data-lucide="monitor-play" class="w-8 h-8"></i>
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight mb-2">PIP 畫中畫自動啟動</h1>
+            <p class="text-sm text-slate-400 mb-6">
+                因瀏覽器安全限制，網頁必須在您進行一次點擊互動後，才能開啟畫中畫。請點擊下方按鈕，系統將為您自動彈出畫中畫視窗。
+            </p>
+            <div class="space-y-3 w-full">
+                <!-- ⚠️ 關鍵：此按鈕直接同步調用 triggerVideoPiP，不含任何非同步延遲 -->
+                <button onclick="handleAutoOpen('video')" class="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-[0.98] transition-all rounded-xl font-medium text-white shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 pulse-btn">
+                    <i data-lucide="video" class="w-5 h-5"></i>
+                    點擊進入並「自動打開影片畫中畫」
+                </button>
+                <button onclick="handleAutoOpen('doc')" id="welcome-btn-doc" class="w-full py-3 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] transition-all rounded-xl font-medium text-slate-300 border border-slate-700 flex items-center justify-center gap-2">
+                    <i data-lucide="layers" class="w-5 h-5"></i>
+                    使用「網頁內容畫中畫」進入
+                </button>
+                <button onclick="dismissOverlayOnly()" class="text-xs text-slate-500 hover:text-slate-400 underline transition-all pt-2 block mx-auto">
+                    僅進入網站，稍後手動打開
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頂部導航欄 -->
+    <header class="border-b border-slate-900 bg-slate-900/50 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">
+                    <i data-lucide="picture-in-picture-2" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-sm md:text-base leading-tight">畫中畫工具箱</h1>
+                    <span class="text-[10px] text-slate-500 block">HTML5 Picture-in-Picture Suite</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <span id="browser-badge" class="px-2.5 py-1 rounded-full text-[10px] md:text-xs font-medium flex items-center gap-1.5">
+                    <!-- 瀏覽器支援狀態 -->
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="max-w-6xl w-full mx-auto px-4 py-6 md:py-8 flex-grow">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            <!-- 左側/中側：控制與輸入區 -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- 工具卡片：自訂內容 -->
+                <section class="glass-panel rounded-2xl p-5 md:p-6 shadow-xl">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-base md:text-lg font-bold flex items-center gap-2">
+                            <i data-lucide="sliders" class="text-indigo-400 w-5 h-5"></i>
+                            自訂畫中畫顯示內容
+                        </h2>
+                        <span class="text-[10px] md:text-xs text-slate-400">變更會即時同步</span>
+                    </div>
+
+                    <div class="space-y-4">
+                        <!-- 提詞文本 -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">懸浮提詞/筆記備忘錄內容</label>
+                            <textarea id="pip-text-input" class="w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3 text-sm focus:outline-none focus:border-indigo-500 text-slate-200 resize-none h-28 transition-all" placeholder="輸入你想懸浮在最上層的文字內容..."></textarea>
+                        </div>
+
+                        <!-- 預設快捷內容 -->
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="setTemplateText('簡報大綱：\n1. 開場介紹與痛點分析\n2. 核心解決方案與演示\n3. Q&A 互動環節')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">簡報大綱模版</button>
+                            <button onclick="setTemplateText('💡 工作番茄鐘：全力專注 25 分鐘，放鬆休息 5 分鐘。保持呼吸與放鬆！')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">工作心法</button>
+                            <button onclick="setTemplateText('重要代辦：\n- [ ] 10:00 專案例會\n- [ ] 14:00 客戶功能提案')" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs text-slate-300 rounded-lg transition-all">代辦清單</button>
+                        </div>
+
+                        <!-- 背景風格與顏色 -->
+                        <div class="grid grid-cols-2 gap-4 pt-2">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">畫布主題風格</label>
+                                <select id="theme-select" onchange="updateCanvasTheme()" class="w-full bg-slate-950/80 border border-slate-800 rounded-lg p-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200">
+                                    <option value="neon">暗夜霓虹 (極客藍)</option>
+                                    <option value="minimal">簡約極簡 (黑白對比)</option>
+                                    <option value="sunset">暖陽晚霞 (漸層紫橘)</option>
+                                    <option value="forest">森林沐浴 (漸層墨綠)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">影片影格率 (FPS)</label>
+                                <select id="fps-select" onchange="restartStream()" class="w-full bg-slate-950/80 border border-slate-800 rounded-lg p-2.5 text-xs focus:outline-none focus:border-indigo-500 text-slate-200">
+                                    <option value="30">流暢穩定 (30 FPS)</option>
+                                    <option value="60">極致絲滑 (60 FPS)</option>
+                                    <option value="15">節能模式 (15 FPS)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 手動控制中心 -->
+                <section class="glass-panel rounded-2xl p-5 md:p-6 shadow-xl">
+                    <h2 class="text-base md:text-lg font-bold flex items-center gap-2 mb-4">
+                        <i data-lucide="play" class="text-emerald-400 w-5 h-5"></i>
+                        手動開啟 / 控制核心
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- 模式 B: 標準影片畫中畫 (防卡死優化版) -->
+                        <div class="border border-indigo-500/20 bg-indigo-950/10 p-5 rounded-xl flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-[10px] font-bold">跨平台 · 影片 PiP</span>
+                                    <span id="video-pip-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 transition-colors duration-300"></span>
+                                </div>
+                                <h3 class="font-bold text-sm mb-1">標準影片畫中畫 (預熱防卡)</h3>
+                                <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+                                    同步喚醒機制，專門相容 iOS Chrome/Safari 與 Android。將動態時鐘與自訂文字以串流置頂。
+                                </p>
+                            </div>
+                            <button id="btn-video-pip" onclick="triggerVideoPiP()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed active:scale-95 transition-all rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 text-white">
+                                <i data-lucide="video" class="w-4 h-4"></i>
+                                <span id="btn-video-text">開啟「標準影片畫中畫」</span>
+                            </button>
+                        </div>
+
+                        <!-- 模式 A: 網頁畫中畫 (Document PiP) -->
+                        <div class="border border-slate-800 bg-slate-950/50 p-5 rounded-xl flex flex-col justify-between">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[10px] font-bold">電腦版專屬 · 網頁 PiP</span>
+                                    <span id="doc-pip-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 transition-colors duration-300"></span>
+                                </div>
+                                <h3 class="font-bold text-sm mb-1">網頁互動內容畫中畫</h3>
+                                <p class="text-xs text-slate-400 mb-4 leading-relaxed">
+                                    直接在懸浮視窗中渲染可交互的 HTML 元件，支援拖曳輸入、秒錶。僅適用於桌上型電腦 Chrome/Edge。
+                                </p>
+                            </div>
+                            <button id="btn-doc-pip" onclick="triggerDocPiP()" class="w-full py-3 bg-slate-800 text-slate-500 cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed active:scale-95 transition-all rounded-lg text-xs font-bold flex items-center justify-center gap-1.5" disabled>
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                <span id="btn-doc-text">行動裝置不支援此模式</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 右側：本機預覽與調試說明 -->
+            <div class="space-y-6">
+                <!-- 即時預覽 -->
+                <section class="glass-panel rounded-2xl p-5 md:p-6 shadow-xl">
+                    <h2 class="text-base md:text-lg font-bold flex items-center gap-2 mb-3">
+                        <i data-lucide="eye" class="text-purple-400 w-5 h-5"></i>
+                        主網頁實時渲染預覽
+                    </h2>
+                    
+                    <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                        <!-- Canvas 渲染畫布 -->
+                        <canvas id="pip-canvas" width="640" height="360" class="absolute inset-0 w-full h-full object-cover"></canvas>
+                        
+                        <!-- ⚠️ 關鍵相容設計：
+                             在 Chrome/iOS 中，影片不能被設為 display: none 或徹底隱藏。
+                             我們使用 4x4px 微型尺寸並透過絕對定位置於角落，透明度設為 0.05 保持活躍串流，全平台相容！ -->
+                        <video id="pip-video" autoplay muted playsinline style="position: absolute; width: 4px; height: 4px; opacity: 0.05; pointer-events: none; bottom: 4px; right: 4px; z-index: 10;"></video>
+                        
+                        <!-- 運作狀態 -->
+                        <div class="absolute bottom-2 right-2 bg-slate-900/95 px-2.5 py-1 rounded text-[10px] font-semibold text-indigo-400 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></span>
+                            LIVE STREAM
+                        </div>
+                    </div>
+                    
+                    <p class="text-center text-[10px] text-slate-500 mt-2">
+                        Canvas 正以高品質輸出動態影格至背景影片源中
+                    </p>
+                </section>
+
+                <!-- 除錯機制說明 -->
+                <section class="glass-panel rounded-2xl p-5 md:p-6 shadow-xl">
+                    <h2 class="text-sm font-bold flex items-center gap-2 mb-3 text-amber-400">
+                        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                        跨瀏覽器安全機制調校
+                    </h2>
+                    <ul class="space-y-2 text-xs text-slate-400 leading-relaxed">
+                        <li class="flex items-start gap-1.5">
+                            <span class="text-indigo-400 font-bold">•</span>
+                            <span><strong>零延遲同步調用（Zero-Delay）：</strong> 本次更新將 PiP 啟動邏輯與點擊事件 100% 同步，完全避免行動端瀏覽器因非同步操作而拋出「使用者啟動失效」錯誤。</span>
+                        </li>
+                        <li class="flex items-start gap-1.5">
+                            <span class="text-indigo-400 font-bold">•</span>
+                            <span><strong>iOS 專屬 WebKit 相容：</strong> 同步相容標準與舊版 WebKit 畫中畫控制協議，完美流暢。</span>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="border-t border-slate-900 bg-slate-950/80 py-6 mt-12">
+        <div class="max-w-6xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <div>
+                © 2026 PIP 畫中畫多功能工具箱. 修正相容性版本.
+            </div>
+            <div class="flex gap-4">
+                <span class="hover:text-slate-400 cursor-pointer">隱私保護</span>
+                <span class="hover:text-slate-400 cursor-pointer">技術條款</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 自訂 Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 space-y-2 max-w-sm w-full pointer-events-none"></div>
+
+    <script>
+        // 初始化圖標
+        lucide.createIcons();
+
+        // 綁定 DOM 元素
+        const canvas = document.getElementById('pip-canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('pip-video');
+        const textInput = document.getElementById('pip-text-input');
+        const themeSelect = document.getElementById('theme-select');
+        const fpsSelect = document.getElementById('fps-select');
+
+        const btnVideoPiP = document.getElementById('btn-video-pip');
+        const btnVideoText = document.getElementById('btn-video-text');
+        const statusVideoPiP = document.getElementById('video-pip-status');
+
+        const btnDocPiP = document.getElementById('btn-doc-pip');
+        const btnDocText = document.getElementById('btn-doc-text');
+        const statusDocPiP = document.getElementById('doc-pip-status');
+
+        // 狀態變數
+        let activeDocPipWindow = null;
+        let isProcessingVideoPiP = false;
+        let isProcessingDocPiP = false;
+        let captureStreamObj = null;
+
+        let currentText = "💡 PIP 畫中畫工具箱：\n這是一段完全實時同步的懸浮提示文字。\n您可以試著在網頁中更改此處文字！";
+        textInput.value = currentText;
+
+        const themes = {
+            neon: { bg: '#090d16', border: '#4f46e5', text: '#f8fafc', accent: '#10b981' },
+            minimal: { bg: '#000000', border: '#ffffff', text: '#ffffff', accent: '#ffffff' },
+            sunset: { bg: '#180f1e', border: '#ec4899', text: '#f8fafc', accent: '#f59e0b' },
+            forest: { bg: '#061a14', border: '#10b981', text: '#f1f5f9', accent: '#34d399' }
+        };
+        let currentTheme = themes.neon;
+
+        // 引導層邏輯
+        function handleAutoOpen(mode) {
+            // ⚠️ 關鍵修正：必須先開起畫中畫，最後才隱藏引導層！確保不佔用事件棧！
+            if (mode === 'video') {
+                triggerVideoPiP();
+            } else if (mode === 'doc') {
+                triggerDocPiP();
+            }
+            dismissOverlayOnly();
+        }
+
+        function dismissOverlayOnly() {
+            const overlay = document.getElementById('welcome-overlay');
+            overlay.classList.add('opacity-0');
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 500);
+        }
+
+        // 初始化與效能環境偵測
+        window.addEventListener('DOMContentLoaded', () => {
+            const badge = document.getElementById('browser-badge');
+            
+            // 偵測 iOS 與各瀏覽器支援度
+            const hasVideoPiP = !!document.pictureInPictureEnabled || (video.webkitSupportsPresentationMode && typeof video.webkitSetPresentationMode === "function");
+            const hasDocPiP = 'documentPictureInPicture' in window;
+
+            if (hasDocPiP) {
+                badge.className += ' bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                badge.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> 系統完美支援 (雙重畫中畫)';
+                
+                btnDocPiP.disabled = false;
+                btnDocText.innerText = "開啟「網頁互動畫中畫」";
+            } else if (hasVideoPiP) {
+                badge.className += ' bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                badge.innerHTML = '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> 支援標準影片畫中畫';
+                
+                // 行動端不支援 Document PiP，維持隱藏/停用
+                btnDocPiP.disabled = true;
+                btnDocText.innerText = "行動裝置不支援網頁 PiP";
+                const welcomeBtnDoc = document.getElementById('welcome-btn-doc');
+                if (welcomeBtnDoc) welcomeBtnDoc.style.display = 'none';
+            } else {
+                badge.className += ' bg-red-500/10 text-red-400 border border-red-500/20';
+                badge.innerHTML = '<i data-lucide="x-circle" class="w-3.5 h-3.5"></i> 瀏覽器不支援畫中畫';
+                btnVideoPiP.disabled = true;
+                btnVideoText.innerText = "不支援此模式";
+            }
+            lucide.createIcons();
+
+            // 啟動 Canvas 繪圖循環
+            startCanvasRenderer();
+        });
+
+        // 設定快速範本文字
+        function setTemplateText(text) {
+            textInput.value = text;
+            currentText = text;
+            showToast('已同步新範本到畫中畫！', 'success');
+        }
+
+        // 偵聽文字變更並即時同步
+        textInput.addEventListener('input', (e) => {
+            currentText = e.target.value;
+            if (activeDocPipWindow) {
+                const pipTextArea = activeDocPipWindow.document.getElementById('pip-doc-textarea');
+                if (pipTextArea) {
+                    pipTextArea.value = currentText;
+                }
+            }
+        });
+
+        // 變更渲染風格
+        function updateCanvasTheme() {
+            currentTheme = themes[themeSelect.value] || themes.neon;
+        }
+
+        // 建立或重新建立 Canvas 串流
+        function setupCaptureStream() {
+            if (captureStreamObj) {
+                captureStreamObj.getTracks().forEach(track => track.stop());
+            }
+            const fps = parseInt(fpsSelect.value) || 30;
+            captureStreamObj = canvas.captureStream(fps);
+            video.srcObject = captureStreamObj;
+            
+            // 預熱播放，防止畫中畫啟動時載入超時
+            video.play().catch(err => {
+                console.warn("背景播放提示 (靜音預熱):", err);
+            });
+        }
+
+        function restartStream() {
+            setupCaptureStream();
+            showToast('已重新配置串流幀率 (FPS)', 'success');
+        }
+
+        // Canvas 2D 動態渲染循環
+        function startCanvasRenderer() {
+            let rotation = 0;
+
+            function drawFrame() {
+                const w = canvas.width;
+                const h = canvas.height;
+
+                // 1. 繪製精美背景
+                const grad = ctx.createLinearGradient(0, 0, w, h);
+                grad.addColorStop(0, currentTheme.bg);
+                grad.addColorStop(0.5, '#040711');
+                grad.addColorStop(1, currentTheme.bg);
+                ctx.fillStyle = grad;
+                ctx.fillRect(0, 0, w, h);
+
+                // 2. 邊框
+                ctx.strokeStyle = currentTheme.border;
+                ctx.lineWidth = 4;
+                ctx.strokeRect(2, 2, w - 4, h - 4);
+
+                // 網格點
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.02)';
+                for (let x = 15; x < w; x += 30) {
+                    for (let y = 15; y < h; y += 30) {
+                        ctx.fillRect(x, y, 2, 2);
+                    }
+                }
+
+                // 3. 動態指針/幾何圖形
+                ctx.save();
+                ctx.translate(w - 75, 75);
+                rotation += 0.008;
+                ctx.rotate(rotation);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+                ctx.lineWidth = 1;
+                for (let i = 0; i < 4; i++) {
+                    ctx.strokeRect(-25, -25, 50, 50);
+                    ctx.rotate(Math.PI / 4);
+                }
+                ctx.restore();
+
+                // 4. 時鐘顯示
+                const now = new Date();
+                const timeString = now.toTimeString().split(' ')[0];
+                ctx.font = "bold 24px monospace";
+                ctx.fillStyle = currentTheme.accent;
+                ctx.textAlign = "right";
+                ctx.fillText(timeString, w - 30, 48);
+
+                // 5. 標題與修飾
+                ctx.font = "bold 13px sans-serif";
+                ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+                ctx.textAlign = "left";
+                ctx.fillText("📌 懸浮時鐘提詞機 (標準影片畫中畫)", 25, 42);
+
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(25, 60);
+                ctx.lineTo(w - 25, 60);
+                ctx.stroke();
+
+                // 6. 提詞文字
+                ctx.font = "17px 'Microsoft JhengHei', sans-serif";
+                ctx.fillStyle = currentTheme.text;
+                ctx.textAlign = "left";
+
+                const lines = currentText.split('\n');
+                let startY = 95;
+                const lineHeight = 28;
+                for (let i = 0; i < lines.length && startY < h - 20; i++) {
+                    ctx.fillText(lines[i], 30, startY);
+                    startY += lineHeight;
+                }
+
+                requestAnimationFrame(drawFrame);
+            }
+
+            // 先繪製第一影格，然後才捕捉串流，避免黑畫面
+            drawFrame();
+            setupCaptureStream();
+        }
+
+        // ==========================================
+        // 模式 B: 標準影片畫中畫 (同步流暢，相容 iOS Chrome/Safari)
+        // ==========================================
+        function triggerVideoPiP() {
+            // 防重複點擊鎖
+            if (isProcessingVideoPiP) return;
+            isProcessingVideoPiP = true;
+            btnVideoPiP.disabled = true;
+            btnVideoText.innerText = "同步啟動中...";
+
+            try {
+                // 1. 判斷是否已經開啟，若已開啟則關閉
+                const isAlreadyPiP = document.pictureInPictureElement || 
+                                     (video.webkitPresentationMode === "picture-in-picture");
+
+                if (isAlreadyPiP) {
+                    if (document.exitPictureInPicture) {
+                        document.exitPictureInPicture().then(() => {
+                            resetPiPState();
+                        }).catch(err => {
+                            console.error(err);
+                            isProcessingVideoPiP = false;
+                        });
+                    } else if (video.webkitSetPresentationMode) {
+                        video.webkitSetPresentationMode("inline");
+                        resetPiPState();
+                    }
+                    return;
+                }
+
+                // 2. 確保影片播放
+                video.play();
+
+                // 3. 【iOS / WebKit 相容分支】優先偵測
+                if (video.webkitSupportsPresentationMode && typeof video.webkitSetPresentationMode === "function") {
+                    video.webkitSetPresentationMode("picture-in-picture");
+                    setPiPActiveState();
+                    isProcessingVideoPiP = false;
+                    btnVideoPiP.disabled = false;
+                    
+                    // 偵測 iOS 退出畫中畫
+                    video.addEventListener('webkitpresentationmodechanged', () => {
+                        if (video.webkitPresentationMode !== "picture-in-picture") {
+                            resetPiPState();
+                        }
+                    }, { once: true });
+                } 
+                // 4. 【標準 W3C API 分支】(桌上型 Chrome/Firefox/Edge)
+                else if (video.requestPictureInPicture) {
+                    video.requestPictureInPicture()
+                        .then(() => {
+                            setPiPActiveState();
+                            
+                            // 監聽退出事件
+                            video.addEventListener('leavepictureinpicture', () => {
+                                resetPiPState();
+                            }, { once: true });
+                        })
+                        .catch(err => {
+                            console.error("PiP error:", err);
+                            showToast(`啟動失敗: ${err.message}`, 'error');
+                        })
+                        .finally(() => {
+                            isProcessingVideoPiP = false;
+                            btnVideoPiP.disabled = false;
+                        });
+                } else {
+                    showToast('您的瀏覽器不支援任何畫中畫機制。', 'error');
+                    isProcessingVideoPiP = false;
+                    btnVideoPiP.disabled = false;
+                }
+            } catch (err) {
+                console.error("同步啟動錯誤:", err);
+                showToast(`錯誤: ${err.message}`, 'error');
+                isProcessingVideoPiP = false;
+                btnVideoPiP.disabled = false;
+            }
+        }
+
+        // 輔助函式：切換至啟用狀態
+        function setPiPActiveState() {
+            statusVideoPiP.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+            btnVideoText.innerText = "關閉「標準影片畫中畫」";
+            showToast('影片畫中畫開啟成功！可縮小主網頁保持置頂。', 'success');
+        }
+
+        // 輔助函式：切換至重置狀態
+        function resetPiPState() {
+            statusVideoPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+            btnVideoText.innerText = "開啟「標準影片畫中畫」";
+            isProcessingVideoPiP = false;
+            btnVideoPiP.disabled = false;
+            showToast('已退出畫中畫。', 'info');
+        }
+
+        // ==========================================
+        // 模式 A: 網頁畫中畫 (Document PiP) - 僅支援電腦版
+        // ==========================================
+        async function triggerDocPiP() {
+            if (isProcessingDocPiP) return;
+            isProcessingDocPiP = true;
+            btnDocPiP.disabled = true;
+            btnDocText.innerText = "處理中...";
+
+            if (!('documentPictureInPicture' in window)) {
+                showToast('行動裝置不支援 Document PiP，請使用影片 PiP。', 'error');
+                isProcessingDocPiP = false;
+                return;
+            }
+
+            if (activeDocPipWindow) {
+                activeDocPipWindow.close();
+                activeDocPipWindow = null;
+                statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                btnDocText.innerText = "開啟「網頁互動畫中畫」";
+                isProcessingDocPiP = false;
+                return;
+            }
+
+            try {
+                activeDocPipWindow = await window.documentPictureInPicture.requestWindow({
+                    width: 380,
+                    height: 360,
+                });
+
+                statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                btnDocText.innerText = "關閉「網頁互動畫中畫」";
+                showToast('已開啟可點擊交互的網頁畫中畫！', 'success');
+
+                const tailwindScript = activeDocPipWindow.document.createElement('script');
+                tailwindScript.src = 'https://cdn.tailwindcss.com';
+                activeDocPipWindow.document.head.appendChild(tailwindScript);
+
+                const container = activeDocPipWindow.document.createElement('div');
+                container.className = 'bg-slate-950 text-slate-100 p-4 font-sans min-h-screen flex flex-col justify-between select-none';
+                container.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h3 class="font-bold text-xs text-slate-300">⚙️ 網頁交互面板</h3>
+                            <span id="pip-time" class="text-[10px] font-mono px-2 py-0.5 bg-slate-800 text-indigo-400 rounded">00:00:00</span>
+                        </div>
+                        <div>
+                            <div class="flex items-center justify-between mb-1">
+                                <label class="text-[9px] font-semibold text-slate-400 uppercase tracking-wider">雙向即時輸入與同步</label>
+                                <span class="text-[9px] text-emerald-400">● 連線同步中</span>
+                            </div>
+                            <textarea id="pip-doc-textarea" class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs focus:outline-none focus:border-indigo-500 text-slate-200 resize-none h-24"></textarea>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="pip-timer-btn" class="py-2 bg-slate-800 hover:bg-slate-700 text-[11px] rounded-lg font-medium transition-all text-slate-200">
+                                ⏱️ 秒錶 (<span id="pip-stopwatch">0.0s</span>)
+                            </button>
+                            <button id="pip-reset-timer-btn" class="py-2 bg-slate-900 hover:bg-slate-800 text-[11px] rounded-lg font-medium transition-all text-slate-400">
+                                重置秒錶
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pt-2 border-t border-slate-900 flex justify-between items-center">
+                        <span class="text-[9px] text-slate-500">可拖拉邊角調整大小</span>
+                        <button id="pip-close-action" class="py-1 px-2.5 bg-rose-600 hover:bg-rose-500 text-[10px] text-white font-medium rounded-md transition-all">
+                            關閉視窗
+                        </button>
+                    </div>
+                `;
+                activeDocPipWindow.document.body.appendChild(container);
+
+                const pipTextArea = activeDocPipWindow.document.getElementById('pip-doc-textarea');
+                pipTextArea.value = currentText;
+                pipTextArea.addEventListener('input', (e) => {
+                    currentText = e.target.value;
+                    textInput.value = currentText;
+                });
+
+                const pipTimeSpan = activeDocPipWindow.document.getElementById('pip-time');
+                const updateTimeInterval = setInterval(() => {
+                    if (pipTimeSpan) {
+                        const d = new Date();
+                        pipTimeSpan.innerText = d.toTimeString().split(' ')[0];
+                    }
+                }, 1000);
+
+                let stopwatchInterval = null;
+                let stopwatchSeconds = 0;
+                let isRunning = false;
+                const stopwatchBtn = activeDocPipWindow.document.getElementById('pip-timer-btn');
+                const stopwatchResetBtn = activeDocPipWindow.document.getElementById('pip-reset-timer-btn');
+
+                stopwatchBtn.onclick = () => {
+                    if (isRunning) {
+                        clearInterval(stopwatchInterval);
+                        isRunning = false;
+                        stopwatchBtn.className = "py-2 bg-slate-800 hover:bg-slate-700 text-[11px] rounded-lg font-medium transition-all text-slate-200";
+                    } else {
+                        isRunning = true;
+                        stopwatchBtn.className = "py-2 bg-indigo-600 hover:bg-indigo-500 text-[11px] rounded-lg font-medium transition-all text-white animate-pulse";
+                        stopwatchInterval = setInterval(() => {
+                            stopwatchSeconds += 0.1;
+                            const el = activeDocPipWindow.document.getElementById('pip-stopwatch');
+                            if (el) el.innerText = stopwatchSeconds.toFixed(1) + 's';
+                        }, 100);
+                    }
+                };
+
+                stopwatchResetBtn.onclick = () => {
+                    clearInterval(stopwatchInterval);
+                    isRunning = false;
+                    stopwatchSeconds = 0;
+                    stopwatchBtn.className = "py-2 bg-slate-800 hover:bg-slate-700 text-[11px] rounded-lg font-medium transition-all text-slate-200";
+                    const el = activeDocPipWindow.document.getElementById('pip-stopwatch');
+                    if (el) el.innerText = '0.0s';
+                };
+
+                activeDocPipWindow.document.getElementById('pip-close-action').onclick = () => {
+                    activeDocPipWindow.close();
+                };
+
+                activeDocPipWindow.addEventListener('pagehide', () => {
+                    clearInterval(updateTimeInterval);
+                    if (stopwatchInterval) clearInterval(stopwatchInterval);
+                    activeDocPipWindow = null;
+                    statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                    btnDocText.innerText = "開啟「網頁互動畫中畫」";
+                    showToast('網頁互動畫中畫已關閉', 'info');
+                });
+
+            } catch (err) {
+                console.error("Document PiP 啟動失敗:", err);
+                showToast(`開啟失敗: ${err.message}`, 'error');
+            } finally {
+                isProcessingDocPiP = false;
+                btnDocPiP.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // 自訂 Toast 通知系統
+        // ==========================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `p-4 rounded-xl shadow-xl border text-xs md:text-sm font-medium transition-all duration-300 transform translate-y-2 opacity-0 flex items-center justify-between gap-3 pointer-events-auto bg-slate-900`;
+            
+            let icon = '🔔';
+            if (type === 'success') {
+                toast.classList.add('border-emerald-500/20', 'text-emerald-400');
+                icon = '<i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>';
+            } else if (type === 'error') {
+                toast.classList.add('border-rose-500/20', 'text-rose-400');
+                icon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>';
+            } else {
+                toast.classList.add('border-indigo-500/20', 'text-indigo-400');
+                icon = '<i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>';
+            }
+
+            toast.innerHTML = `
+                <div class="flex items-center gap-2">
+                    ${icon}
+                    <span>${message}</span>
+                </div>
+                <button onclick="this.parentElement.remove()" class="text-slate-500 hover:text-slate-300 transition-all text-xs">✕</button>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 4500);
+        }
+    </script>
+</body>
+</html>
