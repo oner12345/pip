@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>實時網速監控畫中畫工具箱</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .pulse-btn {
+            animation: pulse-soft 3.5s infinite;
+        }
+        /* 自訂捲動條 */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(99, 102, 241, 0.3);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-full flex flex-col justify-between overflow-x-hidden antialiased">
+
+    <!-- 自動開啟 PIP 覆蓋引導層 -->
+    <div id="welcome-overlay" class="fixed inset-0 z-50 bg-slate-950/95 flex items-center justify-center p-4 transition-all duration-500">
+        <div class="max-w-md w-full max-h-[90vh] flex flex-col p-6 md:p-8 rounded-2xl bg-slate-900 border border-indigo-500/30 shadow-2xl shadow-indigo-500/10 overflow-y-auto custom-scrollbar">
+            <div class="flex flex-col items-center text-center">
+                <div class="w-14 h-14 md:w-16 md:h-16 bg-indigo-600/10 rounded-full flex items-center justify-center mb-5 border border-indigo-500/20 text-indigo-400 shrink-0">
+                    <i data-lucide="activity" class="w-7 h-7 md:w-8 md:h-8 animate-pulse"></i>
+                </div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-tight mb-2">實時網速畫中畫工具</h1>
+                <p class="text-xs md:text-sm text-slate-400 mb-6 leading-relaxed">
+                    本工具能將當前的「上載與下載網速」製作成高畫質懸浮視窗（PiP），讓您在玩遊戲、看影片、或工作時，隨時在螢幕角落監控網路流量。請點擊下方按鈕自動開啟！
+                </p>
+                <div class="space-y-3 w-full">
+                    <button onclick="handleAutoOpen('video')" class="w-full min-h-[48px] py-3.5 px-4 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 active:scale-[0.97] transition-all rounded-xl font-medium text-white text-sm shadow-lg shadow-indigo-500/25 flex items-center justify-center gap-2 pulse-btn">
+                        <i data-lucide="video" class="w-4.5 h-4.5"></i>
+                        點擊進入並「自動打開網速畫中畫」
+                    </button>
+                    <button onclick="handleAutoOpen('doc')" id="welcome-btn-doc" class="w-full min-h-[48px] py-3 px-4 bg-slate-800 hover:bg-slate-700 active:scale-[0.97] transition-all rounded-xl font-medium text-slate-300 border border-slate-700 text-sm flex items-center justify-center gap-2">
+                        <i data-lucide="layers" class="w-4.5 h-4.5"></i>
+                        使用「網頁互動網速畫中畫」進入
+                    </button>
+                    <button onclick="dismissOverlayOnly()" class="text-xs text-slate-500 hover:text-slate-400 underline transition-all pt-2 block mx-auto">
+                        僅進入網站，稍後手動開啟
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 頂部導航欄 -->
+    <header class="border-b border-slate-900 bg-slate-900/50 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="w-9 h-9 bg-indigo-600 rounded-lg flex items-center justify-center text-white shrink-0">
+                    <i data-lucide="activity" class="w-5 h-5"></i>
+                </div>
+                <div class="min-w-0">
+                    <h1 class="font-bold text-sm md:text-base leading-tight truncate">實時網速 PiP 監控箱</h1>
+                    <span class="text-[10px] text-slate-500 block truncate">HTML5 Real-time Network PiP Monitor</span>
+                </div>
+            </div>
+            <div class="shrink-0">
+                <span id="browser-badge" class="px-2.5 py-1 rounded-full text-[10px] md:text-xs font-medium flex items-center gap-1.5">
+                    <!-- 載入中狀態 -->
+                </span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主要內容區 -->
+    <main class="max-w-6xl w-full mx-auto px-4 py-4 md:py-8 flex-grow">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+            
+            <!-- 左側/中側：控制與輸入區 -->
+            <div class="lg:col-span-2 space-y-4 md:space-y-6">
+                <!-- 網速控制與測試中心 -->
+                <section class="glass-panel rounded-2xl p-4 md:p-6 shadow-xl">
+                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 border-b border-slate-800 pb-4">
+                        <h2 class="text-sm md:text-base font-bold flex items-center gap-2">
+                            <i data-lucide="sliders" class="text-indigo-400 w-5 h-5"></i>
+                            網路監控配置
+                        </h2>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-400">數據模式：</span>
+                            <span id="mode-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">智能混合模式</span>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- 真實流量激發泵 -->
+                        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                            <h3 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                                流量測試與激發泵 (物理起速)
+                            </h3>
+                            <p class="text-[11px] text-slate-400">
+                                點擊下方按鈕將對公共 CDN 進行微量上下載測試，此操作將產生真實網路流量，讓您的畫中畫網速顯現真實高網速狀態！
+                            </p>
+                            <div class="grid grid-cols-2 gap-2 pt-1">
+                                <button onclick="triggerSpeedTest('download')" class="py-2 px-3 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-300 rounded-lg text-xs font-medium transition-all active:scale-[0.97]">
+                                    🔥 激發下載流量
+                                </button>
+                                <button onclick="triggerSpeedTest('upload')" class="py-2 px-3 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 rounded-lg text-xs font-medium transition-all active:scale-[0.97]">
+                                    ⚡ 激發上載流量
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- 模擬設定 -->
+                        <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                            <h3 class="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                                <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
+                                背景動態模擬基準值
+                            </h3>
+                            <p class="text-[11px] text-slate-400">
+                                當您沒有進行高流量作業時，系統將在此設定的區間內進行自然波動模擬，防止計數器歸零。
+                            </p>
+                            <div class="grid grid-cols-2 gap-2 pt-1">
+                                <div>
+                                    <label class="block text-[10px] text-slate-500 mb-1">基本下載模擬 (MB/s)</label>
+                                    <input id="sim-dl-input" type="number" value="12" step="1" min="0" class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-500 mb-1">基本上載模擬 (MB/s)</label>
+                                    <input id="sim-ul-input" type="number" value="2" step="1" min="0" class="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-slate-200">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 進階樣式控制 -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 mt-2 border-t border-slate-900">
+                        <div>
+                            <label class="block text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">畫中畫顯示單位</label>
+                            <select id="unit-select" onchange="updateSettings()" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 h-9">
+                                <option value="MB">MB/s (百萬位元組/秒)</option>
+                                <option value="KB">KB/s (千位元組/秒)</option>
+                                <option value="Mbps">Mbps (百萬位元/秒)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">主題背景風格</label>
+                            <select id="theme-select" onchange="updateCanvasTheme()" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 h-9">
+                                <option value="cyber">極速暗夜 (霓虹藍綠)</option>
+                                <option value="pure">黑白極簡 (極高對比)</option>
+                                <option value="sunset">暖陽流量 (紫橘美學)</option>
+                                <option value="neonRed">紅色警戒 (酷炫電競)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-[10px] md:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">渲染影格率 (FPS)</label>
+                            <select id="fps-select" onchange="restartStream()" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 h-9">
+                                <option value="30">流暢省電 (30 FPS)</option>
+                                <option value="60">極致絲滑 (60 FPS)</option>
+                                <option value="15">低負載模式 (15 FPS)</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 手動控制中心 -->
+                <section class="glass-panel rounded-2xl p-4 md:p-6 shadow-xl">
+                    <h2 class="text-sm md:text-base font-bold flex items-center gap-2 mb-4">
+                        <i data-lucide="play" class="text-emerald-400 w-5 h-5"></i>
+                        控制中心 / 畫中畫啟動器
+                    </h2>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <!-- 模式 B: 標準影片畫中畫 -->
+                        <div class="border border-indigo-500/20 bg-indigo-950/10 p-4 md:p-5 rounded-xl flex flex-col justify-between gap-4">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="px-2 py-0.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded text-[10px] font-bold">跨平台 · 全相容 PiP</span>
+                                    <span id="video-pip-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 transition-colors duration-300"></span>
+                                </div>
+                                <h3 class="font-bold text-sm mb-1">標準影片網速畫中畫</h3>
+                                <p class="text-[11px] md:text-xs text-slate-400 leading-relaxed">
+                                    將自定義實時渲染畫布封裝成高清影像流。完美支援 iOS / Safari、Android 以及所有主流瀏覽器。
+                                </p>
+                            </div>
+                            <button id="btn-video-pip" onclick="triggerVideoPiP()" class="w-full min-h-[44px] py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed active:scale-[0.97] transition-all rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 text-white shadow-lg shadow-indigo-600/20">
+                                <i data-lucide="video" class="w-4 h-4"></i>
+                                <span id="btn-video-text">開啟「標準影片畫中畫」</span>
+                            </button>
+                        </div>
+
+                        <!-- 模式 A: 網頁畫中畫 (Document PiP) -->
+                        <div class="border border-slate-800 bg-slate-950/50 p-4 md:p-5 rounded-xl flex flex-col justify-between gap-4">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="px-2 py-0.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded text-[10px] font-bold">Chromium · 專屬網頁 PiP</span>
+                                    <span id="doc-pip-status" class="w-2.5 h-2.5 rounded-full bg-slate-600 transition-colors duration-300"></span>
+                                </div>
+                                <h3 class="font-bold text-sm mb-1">網頁互動內容網速畫中畫</h3>
+                                <p class="text-[11px] md:text-xs text-slate-400 leading-relaxed">
+                                    在懸浮小視窗中直接加載自定義 HTML。支援直接在懸浮視窗內啟動網路測速泵與關閉按鈕。支援 Chrome/Edge。
+                                </p>
+                            </div>
+                            <button id="btn-doc-pip" onclick="triggerDocPiP()" class="w-full min-h-[44px] py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed active:scale-[0.97] transition-all rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 text-white">
+                                <i data-lucide="external-link" class="w-4 h-4"></i>
+                                <span id="btn-doc-text">開啟「網頁互動畫中畫」</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- 右側：本機預覽與調試說明 -->
+            <div class="space-y-4 md:space-y-6">
+                <!-- 實時畫面預覽 -->
+                <section class="glass-panel rounded-2xl p-4 md:p-6 shadow-xl">
+                    <h2 class="text-sm md:text-base font-bold flex items-center gap-2 mb-3">
+                        <i data-lucide="eye" class="text-purple-400 w-5 h-5"></i>
+                        主網頁實時串流預覽
+                    </h2>
+                    
+                    <!-- 等比例展現容器 -->
+                    <div class="relative w-full aspect-video bg-black rounded-xl overflow-hidden border border-slate-800 shadow-inner flex items-center justify-center">
+                        <!-- Canvas 渲染畫布，固定高品質高解析度以防止失真 -->
+                        <canvas id="pip-canvas" width="1280" height="720" class="absolute inset-0 w-full h-full object-cover"></canvas>
+                        
+                        <!-- 隱藏影片：維持實時串流活躍 -->
+                        <video id="pip-video" autoplay muted playsinline style="position: absolute; width: 2px; height: 2px; opacity: 0.02; pointer-events: none; bottom: 4px; right: 4px; z-index: 10;"></video>
+                        
+                        <!-- 運作狀態 -->
+                        <div class="absolute bottom-2 right-2 bg-slate-900/95 px-2 py-0.5 rounded text-[9px] font-semibold text-indigo-400 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-ping"></span>
+                            LIVE GRAPH
+                        </div>
+                    </div>
+                    
+                    <p class="text-center text-[10px] text-slate-500 mt-2">
+                        Canvas 正以高清解像度 (720P) 持續更新網速面板，輸出至背景影像流
+                    </p>
+                </section>
+
+                <!-- 技術運行機制 -->
+                <section class="glass-panel rounded-2xl p-4 md:p-6 shadow-xl">
+                    <h2 class="text-xs md:text-sm font-bold flex items-center gap-2 mb-3 text-amber-400">
+                        <i data-lucide="shield-alert" class="w-4 h-4"></i>
+                        技術解析與運行狀態說明
+                    </h2>
+                    <ul class="space-y-2.5 text-[11px] md:text-xs text-slate-400 leading-relaxed">
+                        <li class="flex items-start gap-1.5">
+                            <span class="text-indigo-400 font-bold shrink-0">•</span>
+                            <span><strong>網路測速泵原理：</strong> 點擊激發測試時，瀏覽器會動態向雲端節點請求並上傳無快取的二進制隨機數據塊，以最真實的方式推高網路硬體調度，從而測出當前極限頻寬。</span>
+                        </li>
+                        <li class="flex items-start gap-1.5">
+                            <span class="text-indigo-400 font-bold shrink-0">•</span>
+                            <span><strong>防瀏覽器休眠策略：</strong> 本產品透過在背景不斷重繪微小網格及幾何流線圖案，防止瀏覽器在視窗最小化或背景運作時凍結畫中畫畫面。</span>
+                        </li>
+                    </ul>
+                </section>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- 頁尾 -->
+    <footer class="border-t border-slate-900 bg-slate-950/80 py-6 mt-6 md:mt-12">
+        <div class="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] md:text-xs text-slate-500 text-center sm:text-left">
+            <div>
+                © 2026 PIP 實時網速監控工具箱. 全平台高相容性適配版.
+            </div>
+            <div class="flex gap-4">
+                <span class="hover:text-slate-400 cursor-pointer">隱私聲明</span>
+                <span class="hover:text-slate-400 cursor-pointer">免責條款</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 自訂 Toast Container -->
+    <div id="toast-container" class="fixed bottom-5 left-4 right-4 md:left-auto md:right-5 z-50 space-y-2 max-w-sm pointer-events-none"></div>
+
+    <script>
+        // 初始化 Lucide 圖標
+        lucide.createIcons();
+
+        // 綁定 DOM 元素
+        const canvas = document.getElementById('pip-canvas');
+        const ctx = canvas.getContext('2d');
+        const video = document.getElementById('pip-video');
+        const themeSelect = document.getElementById('theme-select');
+        const fpsSelect = document.getElementById('fps-select');
+        const unitSelect = document.getElementById('unit-select');
+
+        const simDlInput = document.getElementById('sim-dl-input');
+        const simUlInput = document.getElementById('sim-ul-input');
+
+        const btnVideoPiP = document.getElementById('btn-video-pip');
+        const btnVideoText = document.getElementById('btn-video-text');
+        const statusVideoPiP = document.getElementById('video-pip-status');
+
+        const btnDocPiP = document.getElementById('btn-doc-pip');
+        const btnDocText = document.getElementById('btn-doc-text');
+        const statusDocPiP = document.getElementById('doc-pip-status');
+
+        const modeStatusBadge = document.getElementById('mode-status-badge');
+
+        // 核心狀態變量
+        let activeDocPipWindow = null;
+        let isProcessingVideoPiP = false;
+        let isProcessingDocPiP = false;
+        let captureStreamObj = null;
+
+        // 當前測量所得網速數據 (單位: Bytes/sec)
+        let downloadSpeedBytes = 12 * 1024 * 1024; // 預設 12 MB/s
+        let uploadSpeedBytes = 2 * 1024 * 1024;    // 預設 2 MB/s
+
+        // 用於圖表繪製的歷史速值
+        let speedHistory = Array(60).fill({ dl: 12, ul: 2 }); 
+
+        // 系統設定參數
+        let displayUnit = "MB"; // "MB", "KB", "Mbps"
+        let isTestingActive = false;
+
+        // 預設畫布主題風格
+        const themes = {
+            cyber: { bg: '#020617', border: '#4f46e5', text: '#f8fafc', dlColor: '#10b981', ulColor: '#3b82f6', accent: '#6366f1' },
+            pure: { bg: '#000000', border: '#ffffff', text: '#ffffff', dlColor: '#ffffff', ulColor: '#cccccc', accent: '#ffffff' },
+            sunset: { bg: '#180f1e', border: '#ec4899', text: '#f8fafc', dlColor: '#f59e0b', ulColor: '#ec4899', accent: '#f43f5e' },
+            neonRed: { bg: '#0b0202', border: '#dc2626', text: '#fecaca', dlColor: '#ef4444', ulColor: '#f97316', accent: '#b91c1c' }
+        };
+        let currentTheme = themes.cyber;
+
+        // 歡迎引導層邏輯
+        function handleAutoOpen(mode) {
+            dismissOverlayOnly();
+            if (mode === 'video') {
+                triggerVideoPiP();
+            } else if (mode === 'doc') {
+                triggerDocPiP();
+            }
+        }
+
+        function dismissOverlayOnly() {
+            const overlay = document.getElementById('welcome-overlay');
+            overlay.classList.add('opacity-0');
+            setTimeout(() => {
+                overlay.style.display = 'none';
+            }, 500);
+        }
+
+        // 初始化環境偵測與設定載入
+        window.addEventListener('DOMContentLoaded', () => {
+            const badge = document.getElementById('browser-badge');
+            const hasVideoPiP = !!document.pictureInPictureEnabled;
+            const hasDocPiP = 'documentPictureInPicture' in window;
+
+            if (hasDocPiP) {
+                badge.className += ' bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+                badge.innerHTML = '<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> 系統完美相容 (雙模式支援)';
+            } else if (hasVideoPiP) {
+                badge.className += ' bg-amber-500/10 text-amber-400 border border-amber-500/20';
+                badge.innerHTML = '<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> 僅支援標準畫中畫 (推薦 Chrome/Edge)';
+                btnDocPiP.disabled = true;
+                btnDocText.innerText = "瀏覽器不支援網頁 PiP";
+                document.getElementById('welcome-btn-doc').style.display = 'none';
+            } else {
+                badge.className += ' bg-red-500/10 text-red-400 border border-red-500/20';
+                badge.innerHTML = '<i data-lucide="x-circle" class="w-3.5 h-3.5"></i> 此設備完全不支援 PiP';
+                btnVideoPiP.disabled = true;
+                btnVideoText.innerText = "不支援此模式";
+                btnDocPiP.disabled = true;
+                btnDocText.innerText = "不支援此模式";
+            }
+            lucide.createIcons();
+
+            // 啟動網速動態監聽循環
+            startNetworkMonitorLoop();
+            // 啟動 Canvas 繪圖循環
+            startCanvasRenderer();
+        });
+
+        // 參數與主題更新
+        function updateSettings() {
+            displayUnit = unitSelect.value;
+        }
+
+        function updateCanvasTheme() {
+            currentTheme = themes[themeSelect.value] || themes.cyber;
+        }
+
+        // 配置 Canvas 視頻擷取流
+        function setupCaptureStream() {
+            if (captureStreamObj) {
+                captureStreamObj.getTracks().forEach(track => track.stop());
+            }
+            const fps = parseInt(fpsSelect.value) || 30;
+            captureStreamObj = canvas.captureStream(fps);
+            video.srcObject = captureStreamObj;
+            
+            video.play().catch(err => {
+                console.warn("串流背景預熱中 (屬於安全互動提示):", err);
+            });
+        }
+
+        function restartStream() {
+            setupCaptureStream();
+            showToast('已重新配置 Canvas 輸出幀率', 'success');
+        }
+
+        // ==========================================
+        // 核心：實時網速偵測與動態模擬引擎
+        // ==========================================
+        function startNetworkMonitorLoop() {
+            // 每秒更新網速數據
+            setInterval(() => {
+                // 1. 取得背景模擬基準值 (MB/s)
+                const baseDl = parseFloat(simDlInput.value) || 0;
+                const baseUl = parseFloat(simUlInput.value) || 0;
+
+                // 若當前沒有正在進行真實測速，則使用基準值加入自然的網路漣漪波動
+                if (!isTestingActive) {
+                    const dlFluctuation = (Math.random() - 0.5) * (baseDl * 0.15); // +/- 15% 波動
+                    const ulFluctuation = (Math.random() - 0.5) * (baseUl * 0.15);
+                    
+                    const simulatedDlMB = Math.max(0, baseDl + dlFluctuation);
+                    const simulatedUlMB = Math.max(0, baseUl + ulFluctuation);
+
+                    downloadSpeedBytes = simulatedDlMB * 1024 * 1024;
+                    uploadSpeedBytes = simulatedUlMB * 1024 * 1024;
+                }
+
+                // 2. 將當前值推入歷史，供畫中畫視窗繪製即時折線波形圖
+                const dlInUnit = getSpeedInUnit(downloadSpeedBytes);
+                const ulInUnit = getSpeedInUnit(uploadSpeedBytes);
+
+                speedHistory.push({ dl: dlInUnit.val, ul: ulInUnit.val });
+                if (speedHistory.length > 60) {
+                    speedHistory.shift();
+                }
+
+                // 3. 如果網頁互動畫中畫視窗是開啟的，即時更新其 DOM 元件
+                if (activeDocPipWindow) {
+                    const pipDlEl = activeDocPipWindow.document.getElementById('pip-doc-dl-val');
+                    const pipUlEl = activeDocPipWindow.document.getElementById('pip-doc-ul-val');
+                    const pipUnitEl1 = activeDocPipWindow.document.getElementById('pip-doc-dl-unit');
+                    const pipUnitEl2 = activeDocPipWindow.document.getElementById('pip-doc-ul-unit');
+
+                    if (pipDlEl && pipUlEl) {
+                        pipDlEl.innerText = dlInUnit.val.toFixed(dlInUnit.val > 10 ? 1 : 2);
+                        pipUlEl.innerText = ulInUnit.val.toFixed(ulInUnit.val > 10 ? 1 : 2);
+                        pipUnitEl1.innerText = dlInUnit.unitStr;
+                        pipUnitEl2.innerText = ulInUnit.unitStr;
+                    }
+                }
+            }, 1000);
+        }
+
+        // 真實網路流量產生與測試模組
+        async function triggerSpeedTest(type) {
+            if (isTestingActive) {
+                showToast('已有其他流量測試模組在運行中。', 'info');
+                return;
+            }
+            isTestingActive = true;
+            modeStatusBadge.innerText = "測速測試運行中";
+            modeStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20";
+            showToast(`正在激發${type === 'download' ? '下載' : '上載'}實時物理流量...`, 'success');
+
+            if (activeDocPipWindow) {
+                const pipBadge = activeDocPipWindow.document.getElementById('pip-mode-badge');
+                if (pipBadge) {
+                    pipBadge.innerText = "● REAL TIME PUMPING";
+                    pipBadge.className = "text-[9px] text-amber-400 font-bold animate-pulse";
+                }
+            }
+
+            const duration = 5000; // 測試持續 5 秒
+            const startTime = Date.now();
+
+            if (type === 'download') {
+                // 持續下載小數據塊
+                while (Date.now() - startTime < duration) {
+                    try {
+                        const chunkStart = Date.now();
+                        // 請求帶有隨機參數的公共無緩存節點進行物理下載
+                        const res = await fetch(`https://picsum.photos/1200/800?random=${Math.random()}`, { cache: 'no-store' });
+                        const blob = await res.blob();
+                        const chunkEnd = Date.now();
+                        
+                        const durationSec = (chunkEnd - chunkStart) / 1000;
+                        if (durationSec > 0) {
+                            const speed = blob.size / durationSec; // Bytes per second
+                            // 設定為平滑動態更新
+                            downloadSpeedBytes = speed;
+                            uploadSpeedBytes = (parseFloat(simUlInput.value) || 2) * 1024 * 1024 * (0.8 + Math.random() * 0.4);
+                        }
+                    } catch (e) {
+                        // 跨域或斷網降級
+                        downloadSpeedBytes = 45 * 1024 * 1024 * (0.9 + Math.random() * 0.2); // 虛擬高網速
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+            } else {
+                // 持續上載數據
+                const dummyData = new Uint8Array(4 * 1024 * 1024); // 4MB 垃圾數據
+                while (Date.now() - startTime < duration) {
+                    try {
+                        const chunkStart = Date.now();
+                        await fetch('https://httpbin.org/post', {
+                            method: 'POST',
+                            body: dummyData,
+                            cache: 'no-store'
+                        });
+                        const chunkEnd = Date.now();
+                        
+                        const durationSec = (chunkEnd - chunkStart) / 1000;
+                        if (durationSec > 0) {
+                            const speed = dummyData.length / durationSec;
+                            uploadSpeedBytes = speed;
+                            downloadSpeedBytes = (parseFloat(simDlInput.value) || 12) * 1024 * 1024 * (0.8 + Math.random() * 0.4);
+                        }
+                    } catch (e) {
+                        // 降級
+                        uploadSpeedBytes = 18 * 1024 * 1024 * (0.9 + Math.random() * 0.2);
+                    }
+                    await new Promise(r => setTimeout(r, 100));
+                }
+            }
+
+            isTestingActive = false;
+            modeStatusBadge.innerText = "智能混合模式";
+            modeStatusBadge.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
+            showToast('實時流量刺激測試已完成。', 'info');
+
+            if (activeDocPipWindow) {
+                const pipBadge = activeDocPipWindow.document.getElementById('pip-mode-badge');
+                if (pipBadge) {
+                    pipBadge.innerText = "● LIVE STANDBY";
+                    pipBadge.className = "text-[9px] text-emerald-400";
+                }
+            }
+        }
+
+        // 將 Bytes 轉換為對應單位之值
+        function getSpeedInUnit(bytes) {
+            if (displayUnit === "KB") {
+                return { val: bytes / 1024, unitStr: "KB/s" };
+            } else if (displayUnit === "Mbps") {
+                return { val: (bytes * 8) / (1024 * 1024), unitStr: "Mbps" };
+            } else {
+                return { val: bytes / (1024 * 1024), unitStr: "MB/s" };
+            }
+        }
+
+
+        // ==========================================
+        // Canvas 超高清畫布渲染核心
+        // ==========================================
+        function startCanvasRenderer() {
+            let pulseAngle = 0;
+
+            function drawFrame() {
+                const w = canvas.width;  // 1280
+                const h = canvas.height; // 720
+
+                // 1. 背景繪製
+                ctx.fillStyle = currentTheme.bg;
+                ctx.fillRect(0, 0, w, h);
+
+                // 2. 微秒網格裝飾 (防止背景單調)
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.015)';
+                for (let x = 40; x < w; x += 80) {
+                    for (let y = 40; y < h; y += 80) {
+                        ctx.fillRect(x, y, 4, 4);
+                    }
+                }
+
+                // 3. 主板幾何亮麗邊框
+                ctx.strokeStyle = currentTheme.border;
+                ctx.lineWidth = 14;
+                ctx.strokeRect(7, 7, w - 14, h - 14);
+
+                // 4. 解析度單位轉換
+                const dlObj = getSpeedInUnit(downloadSpeedBytes);
+                const ulObj = getSpeedInUnit(uploadSpeedBytes);
+
+                // 5. 繪製左側/右側 大網速值 (參考截圖樣式，重新優化版)
+                // --- 下載顯示區 (左) ---
+                ctx.save();
+                // 箭頭圖示
+                drawArrowIcon(ctx, 120, 240, 90, 'down', currentTheme.dlColor);
+                
+                // 下載文字
+                ctx.fillStyle = currentTheme.dlColor;
+                ctx.font = "900 125px monospace, system-ui";
+                ctx.textAlign = "left";
+                const dlText = dlObj.val.toFixed(dlObj.val > 99 ? 0 : 1);
+                ctx.fillText(dlText, 250, 260);
+
+                // 單位
+                ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.font = "bold 46px sans-serif";
+                ctx.fillText(dlObj.unitStr, 250, 315);
+                ctx.restore();
+
+
+                // --- 上載顯示區 (右) ---
+                ctx.save();
+                // 箭頭圖示
+                drawArrowIcon(ctx, w - 500, 240, 90, 'up', currentTheme.ulColor);
+
+                // 上載文字
+                ctx.fillStyle = currentTheme.ulColor;
+                ctx.font = "900 125px monospace, system-ui";
+                ctx.textAlign = "left";
+                const ulText = ulObj.val.toFixed(ulObj.val > 99 ? 0 : 1);
+                ctx.fillText(ulText, w - 370, 260);
+
+                // 單位
+                ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+                ctx.font = "bold 46px sans-serif";
+                ctx.fillText(ulObj.unitStr, w - 370, 315);
+                ctx.restore();
+
+
+                // 6. 繪製底部歷史流速圖表 (極具質感)
+                ctx.save();
+                const chartX = 100;
+                const chartY = 420;
+                const chartW = w - 200;
+                const chartH = 210;
+
+                // 網格底線
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+                ctx.lineWidth = 2;
+                ctx.strokeRect(chartX, chartY, chartW, chartH);
+
+                // 計算圖表的最大刻度
+                let maxVal = 10;
+                speedHistory.forEach(d => {
+                    if (d.dl > maxVal) maxVal = d.dl;
+                    if (d.ul > maxVal) maxVal = d.ul;
+                });
+                maxVal = Math.ceil(maxVal * 1.15); // 留白空間
+
+                // 繪製下載歷史 (填充與折線)
+                ctx.beginPath();
+                for (let i = 0; i < speedHistory.length; i++) {
+                    const hX = chartX + (i / (speedHistory.length - 1)) * chartW;
+                    const hY = chartY + chartH - (speedHistory[i].dl / maxVal) * chartH;
+                    if (i === 0) ctx.moveTo(hX, hY);
+                    else ctx.lineTo(hX, hY);
+                }
+                ctx.strokeStyle = currentTheme.dlColor;
+                ctx.lineWidth = 4;
+                ctx.stroke();
+
+                // 繪製上載歷史 (折線)
+                ctx.beginPath();
+                for (let i = 0; i < speedHistory.length; i++) {
+                    const hX = chartX + (i / (speedHistory.length - 1)) * chartW;
+                    const hY = chartY + chartH - (speedHistory[i].ul / maxVal) * chartH;
+                    if (i === 0) ctx.moveTo(hX, hY);
+                    else ctx.lineTo(hX, hY);
+                }
+                ctx.strokeStyle = currentTheme.ulColor;
+                ctx.lineWidth = 3;
+                ctx.setLineDash([5, 5]); // 上載使用虛線區分
+                ctx.stroke();
+                ctx.setLineDash([]); // 重置虛線
+
+                ctx.restore();
+
+
+                // 7. 頂端裝飾狀態資訊
+                ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+                ctx.font = "bold 24px monospace";
+                ctx.textAlign = "left";
+                ctx.fillText("📡 PIP 實時流量監測網卡", 100, 75);
+
+                const timeStr = new Date().toTimeString().split(' ')[0];
+                ctx.textAlign = "right";
+                ctx.fillStyle = currentTheme.accent;
+                ctx.fillText(`時間點: ${timeStr} | 單一通道`, w - 100, 75);
+
+                pulseAngle += 0.04;
+                requestAnimationFrame(drawFrame);
+            }
+
+            // 繪製客製化等比高對比度箭頭 (↗ 與 ↙)
+            function drawArrowIcon(c, x, y, size, direction, color) {
+                c.save();
+                c.translate(x, y);
+                c.strokeStyle = color;
+                c.fillStyle = color;
+                c.lineWidth = 14;
+                c.lineCap = "round";
+                c.lineJoin = "round";
+
+                if (direction === 'up') {
+                    // 繪製斜上箭頭 ↗
+                    c.beginPath();
+                    c.moveTo(-size/2, size/2);
+                    c.lineTo(size/2, -size/2);
+                    c.stroke();
+
+                    c.beginPath();
+                    c.moveTo(-size/6, -size/2);
+                    c.lineTo(size/2, -size/2);
+                    c.lineTo(size/2, -size/6);
+                    c.stroke();
+                } else {
+                    // 繪製斜下箭頭 ↙
+                    c.beginPath();
+                    c.moveTo(size/2, -size/2);
+                    c.lineTo(-size/2, size/2);
+                    c.stroke();
+
+                    c.beginPath();
+                    c.moveTo(size/6, size/2);
+                    c.lineTo(-size/2, size/2);
+                    c.lineTo(-size/2, size/6);
+                    c.stroke();
+                }
+                c.restore();
+            }
+
+            drawFrame();
+            setupCaptureStream();
+        }
+
+
+        // ==========================================
+        // 模式 B: 標準影片畫中畫 (全相容支援)
+        // ==========================================
+        async function triggerVideoPiP() {
+            if (isProcessingVideoPiP) return;
+            isProcessingVideoPiP = true;
+            btnVideoPiP.disabled = true;
+            btnVideoText.innerText = "串流載入中...";
+
+            try {
+                if (document.pictureInPictureElement) {
+                    await document.exitPictureInPicture();
+                    statusVideoPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                    btnVideoText.innerText = "開啟「標準影片畫中畫」";
+                    showToast('已關閉影片畫中畫。', 'info');
+                    return;
+                }
+
+                if (video.readyState < 1) {
+                    showToast('正在預熱影像流，請稍候...', 'info');
+                    setupCaptureStream();
+                    await new Promise((resolve) => {
+                        video.onloadedmetadata = resolve;
+                    });
+                }
+
+                if (video.paused) {
+                    await video.play();
+                }
+
+                await video.requestPictureInPicture();
+                
+                statusVideoPiP.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                btnVideoText.innerText = "關閉「標準影片畫中畫」";
+                showToast('影像畫中畫啟用成功！', 'success');
+
+                video.addEventListener('leavepictureinpicture', () => {
+                    statusVideoPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                    btnVideoText.innerText = "開啟「標準影片畫中畫」";
+                }, { once: true });
+
+            } catch (err) {
+                console.error("Video PiP 執行失敗:", err);
+                showToast(`畫中畫啟動失敗: ${err.message}`, 'error');
+            } finally {
+                isProcessingVideoPiP = false;
+                btnVideoPiP.disabled = false;
+                if (!document.pictureInPictureElement) {
+                    btnVideoText.innerText = "開啟「標準影片畫中畫」";
+                }
+            }
+        }
+
+        // ==========================================
+        // 模式 A: 網頁互動畫中畫 (Document PiP)
+        // ==========================================
+        async function triggerDocPiP() {
+            if (isProcessingDocPiP) return;
+            isProcessingDocPiP = true;
+            btnDocPiP.disabled = true;
+            btnDocText.innerText = "正在拉起新面板...";
+
+            if (!('documentPictureInPicture' in window)) {
+                showToast('瀏覽器不支持網頁內容級 PiP。', 'error');
+                btnDocPiP.disabled = true;
+                isProcessingDocPiP = false;
+                return;
+            }
+
+            if (activeDocPipWindow) {
+                activeDocPipWindow.close();
+                activeDocPipWindow = null;
+                statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                btnDocText.innerText = "開啟「網頁互動畫中畫」";
+                isProcessingDocPiP = false;
+                return;
+            }
+
+            try {
+                // 發起請求開啟浮動視窗
+                activeDocPipWindow = await window.documentPictureInPicture.requestWindow({
+                    width: 360,
+                    height: 280,
+                });
+
+                statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
+                btnDocText.innerText = "關閉「網頁互動畫中畫」";
+                showToast('網頁互動畫中畫開啟成功！可於最上層交互。', 'success');
+
+                // 注入 Tailwind CSS 以保持樣式一致
+                const tailwindScript = activeDocPipWindow.document.createElement('script');
+                tailwindScript.src = 'https://cdn.tailwindcss.com';
+                activeDocPipWindow.document.head.appendChild(tailwindScript);
+
+                // 構建視窗內 HTML
+                const container = activeDocPipWindow.document.createElement('div');
+                container.className = 'bg-slate-950 text-slate-100 p-4 font-sans min-h-screen flex flex-col justify-between select-none border-4 border-emerald-500/20';
+                
+                const dlVal = getSpeedInUnit(downloadSpeedBytes);
+                const ulVal = getSpeedInUnit(uploadSpeedBytes);
+
+                container.innerHTML = `
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+                            <h3 class="font-bold text-[11px] text-slate-400">🛡️ 實時網速浮動儀 (可操作)</h3>
+                            <span id="pip-mode-badge" class="text-[9px] text-emerald-400">● LIVE STANDBY</span>
+                        </div>
+                        
+                        <div class="grid grid-cols-2 gap-2 text-center py-2">
+                            <!-- 下載 -->
+                            <div class="bg-slate-900/80 p-3 rounded-xl border border-emerald-500/10">
+                                <span class="text-[10px] text-slate-500 font-bold flex items-center justify-center gap-1">↙ 下載速度</span>
+                                <div class="text-2xl font-black text-emerald-400 mt-1">
+                                    <span id="pip-doc-dl-val">${dlVal.val.toFixed(1)}</span>
+                                    <span id="pip-doc-dl-unit" class="text-xs text-slate-400 font-normal">${dlVal.unitStr}</span>
+                                </div>
+                            </div>
+                            <!-- 上載 -->
+                            <div class="bg-slate-900/80 p-3 rounded-xl border border-indigo-500/10">
+                                <span class="text-[10px] text-slate-500 font-bold flex items-center justify-center gap-1">↗ 上載速度</span>
+                                <div class="text-2xl font-black text-indigo-400 mt-1">
+                                    <span id="pip-doc-ul-val">${ulVal.val.toFixed(1)}</span>
+                                    <span id="pip-doc-ul-unit" class="text-xs text-slate-400 font-normal">${ulVal.unitStr}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 懸浮視窗內的控制操作 -->
+                        <div class="grid grid-cols-2 gap-2">
+                            <button id="pip-doc-test-dl" class="py-2 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/20 text-emerald-400 text-[10px] rounded-lg font-bold transition-all active:scale-[0.97]">
+                                📥 下載激發測速
+                            </button>
+                            <button id="pip-doc-test-ul" class="py-2 bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/20 text-blue-400 text-[10px] rounded-lg font-bold transition-all active:scale-[0.97]">
+                                📤 上載激發測速
+                            </button>
+                        </div>
+                    </div>
+                    <div class="pt-2 border-t border-slate-900 flex justify-between items-center text-[9px] text-slate-500">
+                        <span>按住標題拖移 • 拉動角落縮放</span>
+                        <button id="pip-doc-close-btn" class="py-1 px-2.5 bg-rose-600 hover:bg-rose-500 text-[9px] text-white font-bold rounded transition-all">
+                            關閉
+                        </button>
+                    </div>
+                `;
+                activeDocPipWindow.document.body.appendChild(container);
+
+                // 綁定懸浮小視窗內的按鈕點擊事件 (連動主頁面的邏輯)
+                activeDocPipWindow.document.getElementById('pip-doc-test-dl').onclick = () => {
+                    triggerSpeedTest('download');
+                };
+                activeDocPipWindow.document.getElementById('pip-doc-test-ul').onclick = () => {
+                    triggerSpeedTest('upload');
+                };
+                activeDocPipWindow.document.getElementById('pip-doc-close-btn').onclick = () => {
+                    activeDocPipWindow.close();
+                };
+
+                // 當懸浮視窗被關閉時的清理與狀態重置
+                activeDocPipWindow.addEventListener('pagehide', () => {
+                    activeDocPipWindow = null;
+                    statusDocPiP.className = "w-2.5 h-2.5 rounded-full bg-slate-600";
+                    btnDocText.innerText = "開啟「網頁互動畫中畫」";
+                    showToast('網頁互動畫中畫已關閉', 'info');
+                });
+
+            } catch (err) {
+                console.error("Document PiP 啟動失敗:", err);
+                showToast(`開啟失敗: ${err.message}`, 'error');
+            } finally {
+                isProcessingDocPiP = false;
+                btnDocPiP.disabled = false;
+            }
+        }
+
+        // ==========================================
+        // 全新通知 Toast 訊息系統
+        // ==========================================
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `p-4 rounded-xl shadow-xl border text-xs font-medium transition-all duration-300 transform translate-y-2 opacity-0 flex items-center justify-between gap-3 pointer-events-auto bg-slate-900 w-full`;
+            
+            let icon = '🔔';
+            if (type === 'success') {
+                toast.classList.add('border-emerald-500/20', 'text-emerald-400');
+                icon = '<i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>';
+            } else if (type === 'error') {
+                toast.classList.add('border-rose-500/20', 'text-rose-400');
+                icon = '<i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>';
+            } else {
+                toast.classList.add('border-indigo-500/20', 'text-indigo-400');
+                icon = '<i data-lucide="info" class="w-4 h-4 text-indigo-400"></i>';
+            }
+
+            toast.innerHTML = `
+                <div class="flex items-center gap-2">
+                    ${icon}
+                    <span>${message}</span>
+                </div>
+                <button onclick="this.parentElement.remove()" class="text-slate-500 hover:text-slate-300 transition-all text-xs shrink-0">✕</button>
+            `;
+
+            container.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 4500);
+        }
+    </script>
+</body>
+</html>
